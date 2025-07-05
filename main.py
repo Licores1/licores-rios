@@ -6,6 +6,10 @@ import inventario
 import ventas
 import proveedores
 
+def abrir_reportes_avanzados():
+    import reportes_avanzados
+    reportes_avanzados.ventana_reportes_avanzados()
+
 def abrir_menu(usuario, rol):
     ventana = tk.Tk()
     ventana.title("LICORES RIOS - Menú Principal")
