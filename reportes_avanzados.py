@@ -55,7 +55,7 @@ def mostrar_grafico_ventas(parent, fecha_inicio, fecha_fin):
 
 def mostrar_top_productos(parent, fecha_inicio, fecha_fin):
     # Conecta a la base de datos y obtiene productos más vendidos
-    conn = sqlite3.connect('tu_basedatos.db')
+    conn = sqlite3.connect('inventario.db')
     cursor = conn.cursor()
     cursor.execute("""
         SELECT producto, SUM(cantidad) as total_vendido
