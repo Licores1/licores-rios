@@ -5,10 +5,10 @@ import gestionar_usuarios
 import inventario
 import ventas
 import proveedores
+import alertas
 
-def abrir_reportes_avanzados():
-    import reportes_avanzados
-    reportes_avanzados.ventana_reportes_avanzados()
+def abrir_proveedores():
+    proveedores.ventana_proveedores()
 
 def abrir_menu(usuario, rol):
     ventana = tk.Tk()
@@ -35,7 +35,6 @@ def abrir_menu(usuario, rol):
             ventana, text="Gestión de Inventario", width=30,
             command=inventario.main, bg="#2196F3", fg="white"
         ).pack(pady=10)
-        
         tk.Button(
             ventana, text="Gestión de Usuarios", width=30,
             command=gestionar_usuarios.ventana_gestion_usuarios, bg="#FF9800", fg="white"
@@ -57,13 +56,13 @@ def abrir_menu(usuario, rol):
             ventana, text="Ver Historial de Caja", width=30,
             command=caja.ver_historial, bg="#8bc34a", fg="white"
         ).pack(pady=5)
+        # --- Botón de Proveedores ---
         tk.Button(
-    ventana, 
-    text="Reportes Avanzados", 
-    width=30,
-    command=abrir_reportes_avanzados, 
-    bg="#9C27B0", 
-    fg="white"
+            ventana, text="Proveedores",
+            width=30,
+            command=abrir_proveedores,
+            bg="#00796B",
+            fg="white"
         ).pack(pady=10)
     else:
         tk.Button(
@@ -76,22 +75,12 @@ def abrir_menu(usuario, rol):
         command=ventana.destroy, bg="#F44336", fg="white"
     ).pack(pady=20)
 
+    # Alerta de stock bajo
+    alertas.alerta_stock_bajo()
+
     ventana.mainloop()
 
 if __name__ == "__main__":
     caja.crear_tabla()  # Asegura la tabla de caja al iniciar
     import login
     login.abrir_login(abrir_menu)
-
-    import alertas  # al inicio del archivo
-
-import alertas  # al inicio del archivo
-
-def abrir_menu(usuario, rol):
-    ventana = tk.Tk()
-    # ... (resto de tu código)
-
-    # Alerta de stock bajo
-    alertas.alerta_stock_bajo()
-
-    ventana.mainloop()
