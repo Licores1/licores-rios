@@ -27,7 +27,7 @@ def ventana_reportes_avanzados():
 
 def mostrar_grafico_ventas(parent, fecha_inicio, fecha_fin):
     # Conecta a la base de datos y obtiene ventas agrupadas por día
-    conn = sqlite3.connect('tu_basedatos.db')
+    conn = sqlite3.connect('inventario.db')
     cursor = conn.cursor()
     cursor.execute("""
         SELECT fecha, SUM(total) as total_ventas
