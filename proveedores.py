@@ -3,7 +3,7 @@ from tkinter import messagebox, simpledialog
 from tkinter import ttk
 import sqlite3
 
-DB_NAME = 'tu_basedatos.db'  # Cambia esto si tu base de datos se llama diferente
+DB_NAME = 'inventario.db'  # Cambia esto si tu base de datos se llama diferente
 
 def get_productos():
     """Obtiene la lista de productos del inventario."""
