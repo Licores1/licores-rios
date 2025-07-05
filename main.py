@@ -57,6 +57,14 @@ def abrir_menu(usuario, rol):
             ventana, text="Ver Historial de Caja", width=30,
             command=caja.ver_historial, bg="#8bc34a", fg="white"
         ).pack(pady=5)
+        tk.Button(
+    ventana, 
+    text="Reportes Avanzados", 
+    width=30,
+    command=abrir_reportes_avanzados, 
+    bg="#9C27B0", 
+    fg="white"
+        ).pack(pady=10)
     else:
         tk.Button(
             ventana, text="Registrar Venta", width=30,
