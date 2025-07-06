@@ -8,7 +8,7 @@ import proveedores
 import alertas
 
 def abrir_proveedores():
-    proveedores.ventana_proveedores()
+    proveedores.proveedores_window()
 
 def abrir_menu(usuario, rol):
     ventana = tk.Tk()
