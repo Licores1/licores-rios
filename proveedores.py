@@ -1,207 +1,297 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
-from tkinter import ttk
+from tkinter import ttk, messagebox, filedialog
 import sqlite3
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import openpyxl
 
-DB_NAME = 'inventario.db'
+DATABASE = "inventario.db"
+STOCK_MIN = 5  # Puedes ajustar el mínimo de stock según tu política
 
-def obtener_productos():
-    conn = sqlite3.connect(DB_NAME)
+def conectar():
+    return sqlite3.connect(DATABASE)
+
+# Sugerir pedidos automáticos por bajo stock
+def sugerir_pedidos():
+    conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT id, nombre FROM inventario")
-    productos = cur.fetchall()
+    cur.execute("""
+        SELECT p.id, p.nombre, p.stock, p.precio_compra, pr.nombre 
+        FROM productos p
+        LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+        WHERE p.stock <= ?;
+    """, (STOCK_MIN,))
+    productos_bajo_stock = cur.fetchall()
     conn.close()
-    return productos
+    return productos_bajo_stock
 
-def obtener_productos_proveedor(proveedor_id):
-    conn = sqlite3.connect(DB_NAME)
+# Productos sin proveedor asignado
+def productos_sin_proveedor():
+    conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT producto_id FROM proveedor_producto WHERE proveedor_id=?", (proveedor_id,))
-    productos = [row[0] for row in cur.fetchall()]
+    cur.execute("""
+        SELECT id, nombre, stock FROM productos WHERE proveedor_id IS NULL OR proveedor_id = '';
+    """)
+    sin_prov = cur.fetchall()
     conn.close()
-    return productos
+    return sin_prov
 
-def asociar_productos_a_proveedor(proveedor_id, lista_producto_ids):
-    conn = sqlite3.connect(DB_NAME)
+# Pedidos pendientes (no recibidos)
+def pedidos_pendientes():
+    conn = conectar()
     cur = conn.cursor()
-    cur.execute("DELETE FROM proveedor_producto WHERE proveedor_id=?", (proveedor_id,))
-    for pid in lista_producto_ids:
-        cur.execute("INSERT INTO proveedor_producto (proveedor_id, producto_id) VALUES (?, ?)", (proveedor_id, pid))
+    cur.execute("""
+        SELECT id, proveedor_id, fecha, estado FROM pedidos WHERE estado != 'recibido';
+    """)
+    pendientes = cur.fetchall()
+    conn.close()
+    return pendientes
+
+# Actualizar stock y estado de pedido al recibirlo
+def recibir_pedido(pedido_id):
+    conn = conectar()
+    cur = conn.cursor()
+    # Obtener los productos y cantidades del pedido
+    cur.execute("SELECT producto_id, cantidad, precio_compra FROM detalles_pedido WHERE pedido_id = ?", (pedido_id,))
+    detalles = cur.fetchall()
+    # Sumar cantidades al inventario y actualizar precio de compra si cambió
+    for prod_id, cantidad, nuevo_precio in detalles:
+        cur.execute("SELECT precio_compra FROM productos WHERE id = ?", (prod_id,))
+        precio_actual = cur.fetchone()
+        if precio_actual and precio_actual[0] != nuevo_precio:
+            cur.execute("UPDATE productos SET precio_compra = ? WHERE id = ?", (nuevo_precio, prod_id))
+        cur.execute("UPDATE productos SET stock = stock + ? WHERE id = ?", (cantidad, prod_id))
+    # Marcar pedido como recibido
+    cur.execute("UPDATE pedidos SET estado = 'recibido', fecha_recibido = ? WHERE id = ?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), pedido_id))
     conn.commit()
     conn.close()
+    messagebox.showinfo("Pedido recibido", "Stock actualizado y pedido marcado como recibido.")
 
-def ventana_asociar_productos(proveedor_id, proveedor_nombre):
-    win = tk.Toplevel()
-    win.title(f"Productos de proveedor: {proveedor_nombre}")
-
-    tk.Label(win, text="Selecciona los productos que suministra este proveedor:").pack()
-
-    productos = obtener_productos()
-    productos_asociados = obtener_productos_proveedor(proveedor_id)
-
-    listbox = tk.Listbox(win, selectmode=tk.MULTIPLE, width=50)
-    for idx, (pid, nombre) in enumerate(productos):
-        listbox.insert(tk.END, nombre)
-        if pid in productos_asociados:
-            listbox.selection_set(idx)
-    listbox.pack()
-
-    def guardar_asociaciones():
-        seleccionados = [productos[i][0] for i in listbox.curselection()]
-        asociar_productos_a_proveedor(proveedor_id, seleccionados)
-        messagebox.showinfo("Éxito", "Productos asociados correctamente.", parent=win)
-        win.destroy()
-
-    tk.Button(win, text="Guardar", command=guardar_asociaciones, bg="#1976D2", fg="white").pack(pady=10)
-
-def get_productos():
-    conn = sqlite3.connect(DB_NAME)
+# Exportar orden de compra a PDF
+def exportar_pedido_pdf(pedido_id):
+    conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT nombre FROM inventario")
-    productos = [row[0] for row in cur.fetchall()]
+    cur.execute("SELECT proveedor_id, fecha FROM pedidos WHERE id = ?", (pedido_id,))
+    pedido = cur.fetchone()
+    cur.execute("SELECT nombre FROM proveedores WHERE id = ?", (pedido[0],))
+    proveedor = cur.fetchone()
+    cur.execute("""
+        SELECT p.nombre, d.cantidad, d.precio_compra
+        FROM detalles_pedido d
+        JOIN productos p ON d.producto_id = p.id
+        WHERE d.pedido_id = ?
+    """, (pedido_id,))
+    detalles = cur.fetchall()
     conn.close()
-    return productos
 
-def ventana_proveedores():
+    filename = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
+    if not filename:
+        return
+
+    c = canvas.Canvas(filename, pagesize=letter)
+    c.setFont("Helvetica", 12)
+    c.drawString(30, 750, f"Orden de Compra ID: {pedido_id}")
+    c.drawString(30, 735, f"Proveedor: {proveedor[0] if proveedor else 'N/A'}")
+    c.drawString(30, 720, f"Fecha: {pedido[1]}")
+    c.drawString(30, 700, "Productos:")
+    y = 680
+    c.drawString(40, y, "Nombre")
+    c.drawString(220, y, "Cantidad")
+    c.drawString(320, y, "Precio Compra")
+    y -= 20
+    for nombre, cantidad, precio in detalles:
+        c.drawString(40, y, str(nombre))
+        c.drawString(220, y, str(cantidad))
+        c.drawString(320, y, f"${precio:.2f}")
+        y -= 20
+        if y < 80:
+            c.showPage()
+            y = 750
+    c.save()
+    messagebox.showinfo("Exportado", f"PDF guardado en {filename}")
+
+# Exportar orden de compra a Excel
+def exportar_pedido_excel(pedido_id):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT proveedor_id, fecha FROM pedidos WHERE id = ?", (pedido_id,))
+    pedido = cur.fetchone()
+    cur.execute("SELECT nombre FROM proveedores WHERE id = ?", (pedido[0],))
+    proveedor = cur.fetchone()
+    cur.execute("""
+        SELECT p.nombre, d.cantidad, d.precio_compra
+        FROM detalles_pedido d
+        JOIN productos p ON d.producto_id = p.id
+        WHERE d.pedido_id = ?
+    """, (pedido_id,))
+    detalles = cur.fetchall()
+    conn.close()
+
+    filename = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+    if not filename:
+        return
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Orden de Compra"
+    ws.append(["Orden de Compra ID", pedido_id])
+    ws.append(["Proveedor", proveedor[0] if proveedor else 'N/A'])
+    ws.append(["Fecha", pedido[1]])
+    ws.append([])
+    ws.append(["Nombre", "Cantidad", "Precio Compra"])
+    for nombre, cantidad, precio in detalles:
+        ws.append([nombre, cantidad, precio])
+    wb.save(filename)
+    messagebox.showinfo("Exportado", f"Excel guardado en {filename}")
+
+# Historial de compras por proveedor
+def historial_compras_proveedor(proveedor_id):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, p.fecha, SUM(d.cantidad), SUM(d.cantidad*d.precio_compra)
+        FROM pedidos p
+        JOIN detalles_pedido d ON d.pedido_id = p.id
+        WHERE p.proveedor_id = ?
+        GROUP BY p.id
+        ORDER BY p.fecha DESC
+    """, (proveedor_id,))
+    compras = cur.fetchall()
+    conn.close()
+    return compras
+
+# Ventana principal de proveedores
+def proveedores_window():
     win = tk.Toplevel()
     win.title("Gestión de Proveedores")
-    win.geometry("800x450")
+    win.geometry("1050x700")
+
+    # Panel de sugerencias
+    frame_alertas = tk.Frame(win)
+    frame_alertas.pack(fill="x", pady=5)
+
+    # Bajo stock
+    bajo_stock = sugerir_pedidos()
+    if bajo_stock:
+        alert = tk.Label(frame_alertas, text="¡Atención! Los siguientes productos están por debajo del stock mínimo:", fg="red", font=("Arial", 10, "bold"))
+        alert.pack(anchor="w")
+        for p in bajo_stock:
+            txt = f"Producto: {p[1]} | Stock: {p[2]} | Proveedor: {p[4] or 'No asignado'}"
+            tk.Label(frame_alertas, text=txt, fg="black").pack(anchor="w")
+
+    # Productos sin proveedor
+    sin_prov = productos_sin_proveedor()
+    if sin_prov:
+        alert2 = tk.Label(frame_alertas, text="¡Atención! Hay productos sin proveedor asignado:", fg="orange", font=("Arial", 10, "bold"))
+        alert2.pack(anchor="w")
+        for p in sin_prov:
+            tk.Label(frame_alertas, text=f"Producto: {p[1]} | Stock: {p[2]}", fg="black").pack(anchor="w")
+
+    # Pedidos pendientes
+    pendientes = pedidos_pendientes()
+    if pendientes:
+        alert3 = tk.Label(frame_alertas, text="Pedidos pendientes de recibir:", fg="blue", font=("Arial", 10, "bold"))
+        alert3.pack(anchor="w")
+        for p in pendientes:
+            txt = f"Pedido ID: {p[0]} | Proveedor ID: {p[1]} | Fecha: {p[2]} | Estado: {p[3]}"
+            tk.Label(frame_alertas, text=txt, fg="black").pack(anchor="w")
+
+    # Tabla de proveedores
+    frame_prov = tk.Frame(win)
+    frame_prov.pack(fill="x", pady=10)
+    tk.Label(frame_prov, text="Proveedores:").pack(anchor="w")
+    tree_prov = ttk.Treeview(win, columns=("ID", "Nombre", "Contacto", "Teléfono", "Email"), show="headings", height=8)
+    for col in ("ID", "Nombre", "Contacto", "Teléfono", "Email"):
+        tree_prov.heading(col, text=col)
+    tree_prov.pack(fill="x", padx=10)
 
     def cargar_proveedores():
-        for item in lista.get_children():
-            lista.delete(item)
-        conn = sqlite3.connect(DB_NAME)
+        tree_prov.delete(*tree_prov.get_children())
+        conn = conectar()
         cur = conn.cursor()
-        cur.execute("SELECT id, nombre, telefono, email FROM proveedores")
-        for row in cur.fetchall():
-            lista.insert('', 'end', values=row)
+        cur.execute("SELECT id, nombre, contacto, telefono, email FROM proveedores")
+        for p in cur.fetchall():
+            tree_prov.insert("", tk.END, values=p)
         conn.close()
-
-    def agregar_proveedor():
-        nombre = simpledialog.askstring("Nombre", "Nombre del proveedor:", parent=win)
-        if not nombre:
-            return
-        telefono = simpledialog.askstring("Teléfono", "Teléfono:", parent=win)
-        email = simpledialog.askstring("Email", "Email:", parent=win)
-        conn = sqlite3.connect(DB_NAME)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO proveedores (nombre, telefono, email) VALUES (?,?,?)", (nombre, telefono, email))
-        conn.commit()
-        conn.close()
-        cargar_proveedores()
-
-    def eliminar_proveedor():
-        item = lista.selection()
-        if not item:
-            return
-        proveedor_id = lista.item(item, 'values')[0]
-        conn = sqlite3.connect(DB_NAME)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM proveedores WHERE id=?", (proveedor_id,))
-        cur.execute("DELETE FROM proveedor_producto WHERE proveedor_id=?", (proveedor_id,))
-        conn.commit()
-        conn.close()
-        cargar_proveedores()
-
-    def realizar_pedido():
-        item = lista.selection()
-        if not item:
-            messagebox.showwarning("Atención", "Seleccione un proveedor.", parent=win)
-            return
-        proveedor_id = lista.item(item, 'values')[0]
-        nombre_prov = lista.item(item, 'values')[1]
-        ventana_pedido(proveedor_id, nombre_prov)
-
-    def ver_historial():
-        item = lista.selection()
-        if not item:
-            messagebox.showwarning("Atención", "Seleccione un proveedor.", parent=win)
-            return
-        proveedor_id = lista.item(item, 'values')[0]
-        nombre_prov = lista.item(item, 'values')[1]
-        ventana_historial_pedidos(proveedor_id, nombre_prov)
-
-    def asociar_productos():
-        item = lista.selection()
-        if not item:
-            messagebox.showwarning("Atención", "Seleccione un proveedor.", parent=win)
-            return
-        proveedor_id = lista.item(item, 'values')[0]
-        proveedor_nombre = lista.item(item, 'values')[1]
-        ventana_asociar_productos(proveedor_id, proveedor_nombre)
-
-    lista = ttk.Treeview(win, columns=("ID", "Nombre", "Teléfono", "Email"), show="headings")
-    for col in ("ID", "Nombre", "Teléfono", "Email"):
-        lista.heading(col, text=col)
-        lista.column(col, minwidth=0, width=140, stretch=tk.NO)
-    lista.pack(fill="both", expand=True, pady=10)
-
-    frame = tk.Frame(win)
-    frame.pack(pady=5)
-    tk.Button(frame, text="Agregar Proveedor", command=agregar_proveedor, bg="#388E3C", fg="white").pack(side="left", padx=5)
-    tk.Button(frame, text="Eliminar Proveedor", command=eliminar_proveedor, bg="#D32F2F", fg="white").pack(side="left", padx=5)
-    tk.Button(frame, text="Realizar Pedido", command=realizar_pedido, bg="#1976D2", fg="white").pack(side="left", padx=5)
-    tk.Button(frame, text="Historial de Pedidos", command=ver_historial, bg="#6A1B9A", fg="white").pack(side="left", padx=5)
-    tk.Button(frame, text="Asociar Productos", command=asociar_productos, bg="#0097A7", fg="white").pack(side="left", padx=5)
-
     cargar_proveedores()
 
-def ventana_pedido(proveedor_id, nombre_prov):
-    win = tk.Toplevel()
-    win.title(f"Realizar Pedido a {nombre_prov}")
-    win.geometry("300x200")
-
-    tk.Label(win, text=f"Pedido a: {nombre_prov}", font=("Arial", 12)).pack(pady=5)
-
-    tk.Label(win, text="Producto:").pack()
-    productos = get_productos()
-    producto_var = tk.StringVar()
-    cb = ttk.Combobox(win, textvariable=producto_var, values=productos, state="readonly")
-    cb.pack(pady=2)
-
-    tk.Label(win, text="Cantidad:").pack()
-    cantidad = tk.Entry(win)
-    cantidad.pack(pady=2)
-
-    def guardar_pedido():
-        prod = producto_var.get()
-        cant = cantidad.get()
-        if not prod or not cant:
-            messagebox.showerror("Error", "Completa todos los campos.", parent=win)
+    # Historial de compras por proveedor
+    def mostrar_historial():
+        sel = tree_prov.selection()
+        if not sel:
+            messagebox.showinfo("Seleccione", "Seleccione un proveedor")
             return
-        try:
-            cant_int = int(cant)
-            if cant_int <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("Error", "La cantidad debe ser un número positivo.", parent=win)
-            return
-        conn = sqlite3.connect(DB_NAME)
+        proveedor_id = tree_prov.item(sel[0])["values"][0]
+        historial = historial_compras_proveedor(proveedor_id)
+        win2 = tk.Toplevel(win)
+        win2.title("Historial de compras")
+        tree = ttk.Treeview(win2, columns=("Pedido", "Fecha", "Total Unidades", "Total Gasto"), show="headings")
+        for col in ("Pedido", "Fecha", "Total Unidades", "Total Gasto"):
+            tree.heading(col, text=col)
+        tree.pack(fill="both", expand=True, padx=10, pady=5)
+        for h in historial:
+            tree.insert("", tk.END, values=h)
+
+    tk.Button(win, text="Ver historial de compras", command=mostrar_historial).pack(pady=5)
+
+    # Tabla de pedidos para recibir, marcar recibido, exportar
+    frame_pedidos = tk.Frame(win)
+    frame_pedidos.pack(fill="x", pady=10)
+    tk.Label(frame_pedidos, text="Pedidos:").pack(anchor="w")
+    tree_pedidos = ttk.Treeview(win, columns=("ID", "Proveedor", "Fecha", "Estado"), show="headings", height=8)
+    for col in ("ID", "Proveedor", "Fecha", "Estado"):
+        tree_pedidos.heading(col, text=col)
+    tree_pedidos.pack(fill="x", padx=10)
+
+    def cargar_pedidos():
+        tree_pedidos.delete(*tree_pedidos.get_children())
+        conn = conectar()
         cur = conn.cursor()
-        cur.execute("INSERT INTO pedidos (proveedor_id, producto, cantidad) VALUES (?,?,?)", (proveedor_id, prod, cant_int))
-        conn.commit()
+        cur.execute("""
+            SELECT p.id, pr.nombre, p.fecha, p.estado FROM pedidos p
+            LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+            ORDER BY p.fecha DESC
+        """)
+        for p in cur.fetchall():
+            tree_pedidos.insert("", tk.END, values=p)
         conn.close()
-        messagebox.showinfo("Pedido", "Pedido registrado correctamente.", parent=win)
-        win.destroy()
+    cargar_pedidos()
 
-    tk.Button(win, text="Guardar Pedido", command=guardar_pedido, bg="#1976D2", fg="white").pack(pady=10)
+    def marcar_recibido():
+        sel = tree_pedidos.selection()
+        if not sel:
+            messagebox.showinfo("Seleccione", "Seleccione un pedido")
+            return
+        pedido_id = tree_pedidos.item(sel[0])["values"][0]
+        recibir_pedido(pedido_id)
+        cargar_pedidos()
 
-def ventana_historial_pedidos(proveedor_id, nombre_prov):
-    win = tk.Toplevel()
-    win.title(f"Historial de Pedidos a {nombre_prov}")
-    win.geometry("500x300")
+    def exportar_pdf():
+        sel = tree_pedidos.selection()
+        if not sel:
+            messagebox.showinfo("Seleccione", "Seleccione un pedido")
+            return
+        pedido_id = tree_pedidos.item(sel[0])["values"][0]
+        exportar_pedido_pdf(pedido_id)
 
-    tree = ttk.Treeview(win, columns=("ID", "Producto", "Cantidad", "Fecha"), show="headings")
-    for col in ("ID", "Producto", "Cantidad", "Fecha"):
-        tree.heading(col, text=col)
-    tree.pack(fill="both", expand=True, pady=10)
+    def exportar_excel():
+        sel = tree_pedidos.selection()
+        if not sel:
+            messagebox.showinfo("Seleccione", "Seleccione un pedido")
+            return
+        pedido_id = tree_pedidos.item(sel[0])["values"][0]
+        exportar_pedido_excel(pedido_id)
 
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, producto, cantidad, fecha FROM pedidos WHERE proveedor_id=? ORDER BY fecha DESC",
-        (proveedor_id,)
-    )
-    for row in cur.fetchall():
-        tree.insert('', 'end', values=row)
-    conn.close()
+    btns = tk.Frame(win)
+    btns.pack(pady=5)
+    tk.Button(btns, text="Marcar como recibido", command=marcar_recibido, bg="#4CAF50", fg="white").pack(side="left", padx=5)
+    tk.Button(btns, text="Exportar pedido a PDF", command=exportar_pdf).pack(side="left", padx=5)
+    tk.Button(btns, text="Exportar pedido a Excel", command=exportar_excel).pack(side="left", padx=5)
+
+# Para pruebas o llamada desde menú principal:
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.title("Proveedores - Licores Ríos")
+    tk.Button(root, text="Módulo de proveedores", command=proveedores_window, width=40).pack(pady=30)
+    root.mainloop()
