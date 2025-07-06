@@ -5,6 +5,14 @@ from datetime import datetime
 
 DATABASE = "inventario.db"
 
+# Importa la función para registrar movimiento en historial
+try:
+    from inventario import registrar_movimiento
+except ImportError:
+    # Si no puedes importar, define un dummy para evitar errores
+    def registrar_movimiento(producto_id, tipo, cantidad, descripcion=""):
+        pass
+
 class VentaActual:
     def __init__(self):
         # Cada item: (id, nombre, cantidad, precio_venta, precio_compra)
@@ -151,13 +159,15 @@ def registrar_venta_window(usuario="admin"):
         # Guardar venta
         cur.execute("INSERT INTO ventas (fecha, total, ganancia, usuario) VALUES (?, ?, ?, ?)", (fecha, total, ganancia, usuario))
         venta_id = cur.lastrowid
-        # Guardar detalles y actualizar stock
+        # Guardar detalles y actualizar stock y registrar movimiento
         for item in venta.items:
             cur.execute(
                 "INSERT INTO detalles_venta (venta_id, producto_id, nombre, cantidad, precio_unitario, precio_compra, ganancia_unitaria) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (venta_id, item[0], item[1], item[2], item[3], item[4], calcular_ganancia_unitaria(item[4], item[3]))
             )
             cur.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item[2], item[0]))
+            # --- REGISTRO DE MOVIMIENTO EN HISTORIAL ---
+            registrar_movimiento(item[0], "venta", -item[2], f"Venta ID {venta_id} registrada por {usuario}")
         # Sumar a caja
         cur.execute(
             "INSERT INTO caja (tipo, monto, descripcion, fecha) VALUES (?, ?, ?, ?)",
@@ -220,5 +230,6 @@ def historial_ventas_window():
 
 def main():
     registrar_venta_window()
+
 def ventana_ventas():
     main()

@@ -56,6 +56,12 @@ def abrir_menu(usuario, rol):
             ventana, text="Ver Historial de Caja", width=30,
             command=caja.ver_historial, bg="#8bc34a", fg="white"
         ).pack(pady=5)
+        tk.Button(
+            ventana, text="Registro de insumos", width=30,
+            command=proveedores.ventana_insumos,
+            bg="#00796B",
+            fg="white"
+        ).pack(pady=10)
         # --- Botón de Proveedores ---
         tk.Button(
             ventana, text="Proveedores",
