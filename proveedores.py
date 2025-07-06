@@ -3,7 +3,7 @@ from tkinter import messagebox, simpledialog
 from tkinter import ttk
 import sqlite3
 
-DB_NAME = 'inventario.db'  # Cambia esto si tu base de datos se llama diferente
+DB_NAME = 'inventario.db'
 
 def obtener_productos():
     conn = sqlite3.connect(DB_NAME)
@@ -24,15 +24,12 @@ def obtener_productos_proveedor(proveedor_id):
 def asociar_productos_a_proveedor(proveedor_id, lista_producto_ids):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    # Borra asociaciones antiguas
     cur.execute("DELETE FROM proveedor_producto WHERE proveedor_id=?", (proveedor_id,))
-    # Inserta nuevas asociaciones
     for pid in lista_producto_ids:
         cur.execute("INSERT INTO proveedor_producto (proveedor_id, producto_id) VALUES (?, ?)", (proveedor_id, pid))
     conn.commit()
     conn.close()
 
-# NUEVA FUNCIÓN DE VENTANA PARA ASOCIAR PRODUCTOS
 def ventana_asociar_productos(proveedor_id, proveedor_nombre):
     win = tk.Toplevel()
     win.title(f"Productos de proveedor: {proveedor_nombre}")
@@ -58,7 +55,6 @@ def ventana_asociar_productos(proveedor_id, proveedor_nombre):
     tk.Button(win, text="Guardar", command=guardar_asociaciones, bg="#1976D2", fg="white").pack(pady=10)
 
 def get_productos():
-    """Obtiene la lista de productos del inventario."""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("SELECT nombre FROM inventario")
@@ -102,6 +98,7 @@ def ventana_proveedores():
         conn = sqlite3.connect(DB_NAME)
         cur = conn.cursor()
         cur.execute("DELETE FROM proveedores WHERE id=?", (proveedor_id,))
+        cur.execute("DELETE FROM proveedor_producto WHERE proveedor_id=?", (proveedor_id,))
         conn.commit()
         conn.close()
         cargar_proveedores()
@@ -124,7 +121,6 @@ def ventana_proveedores():
         nombre_prov = lista.item(item, 'values')[1]
         ventana_historial_pedidos(proveedor_id, nombre_prov)
 
-    # NUEVA FUNCIÓN BOTÓN PARA ASOCIAR PRODUCTOS
     def asociar_productos():
         item = lista.selection()
         if not item:
@@ -146,7 +142,6 @@ def ventana_proveedores():
     tk.Button(frame, text="Eliminar Proveedor", command=eliminar_proveedor, bg="#D32F2F", fg="white").pack(side="left", padx=5)
     tk.Button(frame, text="Realizar Pedido", command=realizar_pedido, bg="#1976D2", fg="white").pack(side="left", padx=5)
     tk.Button(frame, text="Historial de Pedidos", command=ver_historial, bg="#6A1B9A", fg="white").pack(side="left", padx=5)
-    # BOTÓN DE ASOCIACIÓN DE PRODUCTOS
     tk.Button(frame, text="Asociar Productos", command=asociar_productos, bg="#0097A7", fg="white").pack(side="left", padx=5)
 
     cargar_proveedores()

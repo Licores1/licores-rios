@@ -33,7 +33,7 @@ def abrir_menu(usuario, rol):
     if rol == "admin":
         tk.Button(
             ventana, text="Gestión de Inventario", width=30,
-            command=inventario.main, bg="#2196F3", fg="white"
+            command=inventario.ventana_inventario, bg="#2196F3", fg="white"
         ).pack(pady=10)
         tk.Button(
             ventana, text="Gestión de Usuarios", width=30,
@@ -41,7 +41,7 @@ def abrir_menu(usuario, rol):
         ).pack(pady=10)
         tk.Button(
             ventana, text="Registro y Consulta de Ventas", width=30,
-            command=ventas.main, bg="#4CAF50", fg="white"
+            command=ventas.ventana_ventas, bg="#4CAF50", fg="white"
         ).pack(pady=10)
         # --- Botones de caja (solo admin) ---
         tk.Button(
@@ -67,7 +67,7 @@ def abrir_menu(usuario, rol):
     else:
         tk.Button(
             ventana, text="Registrar Venta", width=30,
-            command=ventas.main, bg="#4CAF50", fg="white"
+            command=ventas.ventana_ventas, bg="#4CAF50", fg="white"
         ).pack(pady=10)
 
     tk.Button(

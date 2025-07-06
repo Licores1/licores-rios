@@ -206,3 +206,6 @@ if __name__ == "__main__":
     tk.Button(root, text="Registrar venta", command=registrar_venta_window, width=30).pack(pady=10)
     tk.Button(root, text="Historial de ventas", command=historial_ventas_window, width=30).pack(pady=10)
     root.mainloop()
+
+def ventana_ventas():
+    main()   
