@@ -161,6 +161,80 @@ def historial_compras_proveedor(proveedor_id):
     conn.close()
     return compras
 
+# ----------- NUEVO: VENTANA NUEVO PEDIDO ----------
+def ventana_nuevo_pedido():
+    win_pedido = tk.Toplevel()
+    win_pedido.title("Nuevo Pedido")
+    win_pedido.geometry("500x550")
+
+    # Seleccionar proveedor
+    tk.Label(win_pedido, text="Proveedor:").pack()
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nombre FROM proveedores")
+    proveedores = cur.fetchall()
+    conn.close()
+    proveedor_var = tk.StringVar()
+    proveedor_menu = ttk.Combobox(win_pedido, textvariable=proveedor_var, values=[f"{pid} - {nombre}" for pid, nombre in proveedores])
+    proveedor_menu.pack()
+
+    # Seleccionar productos y cantidades
+    tk.Label(win_pedido, text="Producto:").pack()
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nombre FROM productos")
+    productos = cur.fetchall()
+    conn.close()
+    producto_var = tk.StringVar()
+    producto_menu = ttk.Combobox(win_pedido, textvariable=producto_var, values=[f"{pid} - {nombre}" for pid, nombre in productos])
+    producto_menu.pack()
+
+    tk.Label(win_pedido, text="Cantidad:").pack()
+    cantidad_var = tk.IntVar(value=1)
+    cantidad_entry = tk.Entry(win_pedido, textvariable=cantidad_var)
+    cantidad_entry.pack()
+
+    tk.Label(win_pedido, text="Precio compra:").pack()
+    precio_var = tk.DoubleVar(value=0)
+    precio_entry = tk.Entry(win_pedido, textvariable=precio_var)
+    precio_entry.pack()
+
+    items = []
+
+    def agregar_producto():
+        if producto_var.get() and cantidad_var.get() > 0:
+            items.append((producto_var.get(), cantidad_var.get(), precio_var.get()))
+            lista.insert(tk.END, f"{producto_var.get()} x{cantidad_var.get()} - ${precio_var.get():.2f}")
+
+    lista = tk.Listbox(win_pedido)
+    lista.pack(fill="both", expand=True)
+
+    btn_agregar = tk.Button(win_pedido, text="Agregar producto", command=agregar_producto)
+    btn_agregar.pack()
+
+    def guardar_pedido():
+        if not proveedor_var.get() or not items:
+            messagebox.showerror("Error", "Completa todos los datos")
+            return
+        proveedor_id = int(proveedor_var.get().split(" - ")[0])
+        conn = conectar()
+        cur = conn.cursor()
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        cur.execute("INSERT INTO pedidos (proveedor_id, fecha, estado) VALUES (?, ?, 'pendiente')", (proveedor_id, fecha))
+        pedido_id = cur.lastrowid
+        for prod, cantidad, precio in items:
+            producto_id = int(prod.split(" - ")[0])
+            cur.execute("INSERT INTO detalles_pedido (pedido_id, producto_id, cantidad, precio_compra) VALUES (?, ?, ?, ?)",
+                        (pedido_id, producto_id, cantidad, precio))
+        conn.commit()
+        conn.close()
+        messagebox.showinfo("Éxito", "Pedido registrado")
+        win_pedido.destroy()
+
+    btn_guardar = tk.Button(win_pedido, text="Guardar Pedido", command=guardar_pedido, bg="#2196F3", fg="white")
+    btn_guardar.pack(pady=10)
+# ----------- FIN NUEVO ----------
+
 # Ventana principal de proveedores
 def proveedores_window():
     win = tk.Toplevel()
@@ -215,6 +289,9 @@ def proveedores_window():
             tree_prov.insert("", tk.END, values=p)
         conn.close()
     cargar_proveedores()
+
+    # NUEVO: Botón para nuevo pedido
+    tk.Button(win, text="Nuevo Pedido", command=ventana_nuevo_pedido, bg="#4CAF50", fg="white").pack(pady=10)
 
     # Historial de compras por proveedor
     def mostrar_historial():
